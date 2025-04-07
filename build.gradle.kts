@@ -1,6 +1,9 @@
 plugins {
-  id("uk.gov.justice.hmpps.gradle-spring-boot") version "7.1.1"
-  kotlin("plugin.spring") version "2.1.10"
+  kotlin("jvm") version "2.0.21"
+  id("jacoco")
+  id("com.github.johnrengelman.shadow") version "8.1.1"
+  id("org.barfuin.gradle.jacocolog") version "3.1.0"
+  id("org.owasp.dependencycheck")  version "8.2.1"
 }
 
 configurations {
@@ -8,15 +11,15 @@ configurations {
 }
 
 dependencies {
-  implementation("uk.gov.justice.service.hmpps:hmpps-kotlin-spring-boot-starter:1.2.0")
-  implementation("org.springframework.boot:spring-boot-starter-webflux")
-  implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.4")
+  implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
+  implementation("software.amazon.awssdk:redshiftdata:2.29.20")
+  implementation("software.amazon.awssdk:athena:2.31.3")
 
-  testImplementation("uk.gov.justice.service.hmpps:hmpps-kotlin-spring-boot-starter-test:1.2.0")
-  testImplementation("org.wiremock:wiremock-standalone:3.11.0")
-  testImplementation("io.swagger.parser.v3:swagger-parser:2.1.25") {
-    exclude(group = "io.swagger.core.v3")
-  }
+  //test
+  testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.1")
+}
+java {
+  toolchain.languageVersion.set(JavaLanguageVersion.of(21))
 }
 
 kotlin {
