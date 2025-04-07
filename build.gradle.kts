@@ -31,3 +31,7 @@ tasks {
     compilerOptions.jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
   }
 }
+repositories {
+  mavenLocal()
+  mavenCentral()
+}
