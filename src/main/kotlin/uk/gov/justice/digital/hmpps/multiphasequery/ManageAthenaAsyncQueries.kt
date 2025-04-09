@@ -10,6 +10,7 @@ import software.amazon.awssdk.services.athena.model.QueryExecutionContext
 import software.amazon.awssdk.services.athena.model.StartQueryExecutionRequest
 import software.amazon.awssdk.services.redshiftdata.RedshiftDataClient
 import software.amazon.awssdk.services.redshiftdata.model.*
+import java.util.Base64
 
 
 class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String> {
@@ -46,7 +47,7 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
                 if (getStatementResultResponse.totalNumRows() == 1L) {
                     val rootExecutionId = getData("root_execution_id", 0, getStatementResultResponse)
                     val index = getIntData("index", 0, getStatementResultResponse)
-                    val query = getData("query", 0, getStatementResultResponse)
+                    val query = String(Base64.getDecoder().decode(getData("query", 0, getStatementResultResponse).removeSurrounding("\"").toByteArray()))
                     logger.log("Retrieved ${getStatementResultResponse.records()} results from admin table.", LogLevel.INFO)
                     val datasource = getData("datasource", 0, getStatementResultResponse)
                     if (datasource == "redshift") {
