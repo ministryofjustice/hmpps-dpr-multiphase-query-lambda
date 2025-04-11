@@ -33,8 +33,8 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
                 throw RuntimeException("No execution ID or current state found in the Event.")
             }
             val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState' WHERE current_execution_id = '$queryExecutionId'"
-            queryRedshift(updateStateQuery, logger)
             if (currentState == "SUCCEEDED") {
+                queryRedshift(updateStateQuery, logger)
                 val nextQueryToRun = """
                  SELECT t2.query, t2.database, t2.catalog, t2.datasource, t2.root_execution_id, t2.index FROM
                   (SELECT root_execution_id, query, index FROM datamart.admin.execution_manager WHERE current_execution_id = '$queryExecutionId') AS t1
@@ -69,10 +69,12 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
                     }
                 }
                 logger.log("All queries succeeded. No further queries to run.")
-            } else if (currentState == "FAILED" || currentState == "CANCELLED") {
+            } else if (currentState == "FAILED") {
                 val error = ((payload["detail"] as Map<String,Any>)["athenaError"] as Map<String,Any>)["errorMessage"] as String
                 logger.log("Query with execution ID: $queryExecutionId failed. Error: $error",LogLevel.ERROR)
-                val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', error = '$error'  WHERE current_execution_id = '$queryExecutionId'"
+                val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', error = '${Base64.getEncoder().encodeToString(error.toByteArray())}'  WHERE current_execution_id = '$queryExecutionId'"
+                queryRedshift(updateStateQuery, logger)
+            } else {
                 queryRedshift(updateStateQuery, logger)
             }
         }
