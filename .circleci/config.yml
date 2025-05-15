@@ -14,7 +14,7 @@ workflows:
             - hmpps-reporting-orb
       - reporting/gradle_build_publish:
           tag: "21.0"
-          app: hmpps-dpr-multiphase-query-manager-lambda
+          app: hmpps-dpr-multiphase-query-lambda
           app_artifacts_directory: build/libs/
           bucket_prefix: dpr-artifact-store
           sync_args: "--exclude '*' --include '*-all*jar'"
