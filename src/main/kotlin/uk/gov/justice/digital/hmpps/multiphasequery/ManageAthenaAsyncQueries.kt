@@ -83,9 +83,9 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
 
     private fun queryRedshift(query:String, logger: LambdaLogger): String {
         val statementRequest = ExecuteStatementRequest.builder()
-            .clusterIdentifier("dpr-redshift-development")
-            .database("datamart")
-            .secretArn("arn:aws:secretsmanager:eu-west-2:771283872747:secret:dpr-redshift-secret-development-rLHcQZ")
+            .clusterIdentifier(System.getenv("CLUSTER_ID"))
+            .database(System.getenv("DB_NAME"))
+            .secretArn(System.getenv("CREDENTIAL_SECRET_ARN"))
             .sql(query)
             .build()
 //        parameters?.let {
