@@ -33,6 +33,7 @@ workflows:
           context:
             - hmpps-reporting-common
             - hmpps-reporting-orb
+          cache_key: "dpr-multiphase-query-lambda-build-cache-v1"
 
   owasp-security:
     triggers:
