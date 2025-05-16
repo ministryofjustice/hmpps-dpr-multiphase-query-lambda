@@ -34,6 +34,7 @@ workflows:
             - hmpps-reporting-common
             - hmpps-reporting-orb
           cache_key: "dpr-multiphase-query-lambda-build-cache-v1"
+          deps_checksum_file: build.gradle.kts
 
   owasp-security:
     triggers:
