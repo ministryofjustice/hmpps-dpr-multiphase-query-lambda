@@ -20,10 +20,11 @@ workflows:
           sync_args: "--exclude '*' --include '*-all*jar'"
           deploy_to_test: true # Deploy to Test Environment
           refresh_lambda: true
+          refresh_function: dpr-multiphase-query-function
           notify_jira: true
           notify_slack: true
           channel: dpr_cicd_alerts
-          command: jar shadowJar # Skip tests when building jar, they've already run
+          command: clean jar shadowJar # Skip tests when building jar, they've already run
           filters:
             branches:
               only: /.*/
