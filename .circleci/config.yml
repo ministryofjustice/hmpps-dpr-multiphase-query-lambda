@@ -38,7 +38,7 @@ workflows:
   owasp-security:
     triggers:
       - schedule:
-          cron: "30 6 * * *" ## Runs everyday at 6.30 AM UTC
+          cron: "30 6 * * *" ## Runs every day at 6.30 AM UTC
           filters:
             branches:
               only:
