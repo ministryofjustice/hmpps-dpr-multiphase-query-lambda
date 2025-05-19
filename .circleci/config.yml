@@ -19,11 +19,12 @@ workflows:
           bucket_prefix: dpr-artifact-store
           sync_args: "--exclude '*' --include '*-all*jar'"
           deploy_to_test: true # Deploy to Test Environment
-          refresh_lambda: false
+          refresh_lambda: true
+          refresh_function: dpr-multiphase-query-function
           notify_jira: true
           notify_slack: true
           channel: dpr_cicd_alerts
-          command: jar shadowJar # Skip tests when building jar, they've already run
+          command: clean jar shadowJar # Skip tests when building jar, they've already run
           filters:
             branches:
               only: /.*/
@@ -33,12 +34,12 @@ workflows:
           context:
             - hmpps-reporting-common
             - hmpps-reporting-orb
-          cache_key: "dpr-multiphase-query-lambda-build-cache-v1"
+          deps_checksum_file: build.gradle.kts
 
   owasp-security:
     triggers:
       - schedule:
-          cron: "30 6 * * *" ## Runs everyday at 6.30 AM UTC
+          cron: "30 6 * * *" ## Runs every day at 6.30 AM UTC
           filters:
             branches:
               only:
