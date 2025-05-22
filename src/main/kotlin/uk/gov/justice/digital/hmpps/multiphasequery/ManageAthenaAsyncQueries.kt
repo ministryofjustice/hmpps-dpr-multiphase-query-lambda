@@ -113,6 +113,7 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
             }
         }
         while (describeStatementResponse.status() != StatusString.FINISHED)
+        logger.log("Finished executing statement with id: $executionId, status: ${describeStatementResponse.statusAsString()}", LogLevel.DEBUG)
         return executionId
     }
 
