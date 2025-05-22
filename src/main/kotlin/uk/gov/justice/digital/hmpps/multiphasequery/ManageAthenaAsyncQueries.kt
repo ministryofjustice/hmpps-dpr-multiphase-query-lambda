@@ -95,6 +95,7 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
 //                .build()
 //        }
         val executionId = redshiftClient.executeStatement(statementRequest).id()
+        logger.log("Executing admin table query: $query", LogLevel.DEBUG)
         logger.log("Executed admin table statement and got ID: $executionId", LogLevel.DEBUG)
         val describeStatementRequest = DescribeStatementRequest.builder()
             .id(executionId)
@@ -113,7 +114,7 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
             }
         }
         while (describeStatementResponse.status() != StatusString.FINISHED)
-        logger.log("Finished executing statement with id: $executionId, status: ${describeStatementResponse.statusAsString()}", LogLevel.DEBUG)
+        logger.log("Finished executing statement with id: $executionId, status: ${describeStatementResponse.statusAsString()}, result rows: ${describeStatementResponse.resultRows()}", LogLevel.DEBUG)
         return executionId
     }
 
