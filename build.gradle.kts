@@ -3,7 +3,7 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 plugins {
   kotlin("jvm") version "2.0.21"
   id("jacoco")
-  id("com.github.johnrengelman.shadow") version "8.0.0"
+  id("com.github.johnrengelman.shadow") version "8.1.1"
   id("org.barfuin.gradle.jacocolog") version "3.1.0"
   id("org.owasp.dependencycheck")  version "8.2.1"
 }
