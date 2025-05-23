@@ -84,6 +84,12 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
     }
 
     private fun queryRedshift(query:String, logger: LambdaLogger): String {
+        val statementRequest = ExecuteStatementRequest.builder()
+            .clusterIdentifier(System.getenv("CLUSTER_ID"))
+            .database(System.getenv("DB_NAME"))
+            .secretArn(System.getenv("CREDENTIAL_SECRET_ARN"))
+            .sql(query)
+            .build()
 //        parameters?.let {
 //            val idParam = SqlParameter.builder()
 //                .name(it)
