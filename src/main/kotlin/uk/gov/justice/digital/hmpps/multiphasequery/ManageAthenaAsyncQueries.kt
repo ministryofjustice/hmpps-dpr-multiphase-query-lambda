@@ -17,7 +17,9 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
     private val redshiftClient: RedshiftDataClient = RedshiftDataClient.builder()
         .region(Region.EU_WEST_2)
         .build()
-
+    private val athenaClient: AthenaClient = AthenaClient.builder()
+        .region(Region.EU_WEST_2)
+        .build()
 
     override fun handleRequest(payload: MutableMap<String, Any>, context: Context?): String {
         if (context != null) {
@@ -95,6 +97,7 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
 //                .build()
 //        }
         val executionId = redshiftClient.executeStatement(statementRequest).id()
+        logger.log("Executing admin table query: $query", LogLevel.DEBUG)
         logger.log("Executed admin table statement and got ID: $executionId", LogLevel.DEBUG)
         val describeStatementRequest = DescribeStatementRequest.builder()
             .id(executionId)
@@ -113,6 +116,7 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
             }
         }
         while (describeStatementResponse.status() != StatusString.FINISHED)
+        logger.log("Finished executing statement with id: $executionId, status: ${describeStatementResponse.statusAsString()}, result rows: ${describeStatementResponse.resultRows()}", LogLevel.DEBUG)
         return executionId
     }
 
@@ -140,9 +144,6 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
     }
 
     private fun queryAthena(query:String, database: String, catalog: String, logger: LambdaLogger): String {
-        val athenaClient: AthenaClient = AthenaClient.builder()
-            .region(Region.EU_WEST_2)
-            .build()
 //              val database = "DIGITAL_PRISON_REPORTING"
 //              val catalog = "nomis"
 //              val query = "SELECT agy_loc_id FROM OMS_OWNER.LIVING_UNITS limit 10;"
