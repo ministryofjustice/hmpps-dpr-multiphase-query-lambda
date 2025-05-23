@@ -17,7 +17,9 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
     private val redshiftClient: RedshiftDataClient = RedshiftDataClient.builder()
         .region(Region.EU_WEST_2)
         .build()
-
+    private val athenaClient: AthenaClient = AthenaClient.builder()
+        .region(Region.EU_WEST_2)
+        .build()
 
     override fun handleRequest(payload: MutableMap<String, Any>, context: Context?): String {
         if (context != null) {
@@ -82,12 +84,6 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
     }
 
     private fun queryRedshift(query:String, logger: LambdaLogger): String {
-        val statementRequest = ExecuteStatementRequest.builder()
-            .clusterIdentifier(System.getenv("CLUSTER_ID"))
-            .database(System.getenv("DB_NAME"))
-            .secretArn(System.getenv("CREDENTIAL_SECRET_ARN"))
-            .sql(query)
-            .build()
 //        parameters?.let {
 //            val idParam = SqlParameter.builder()
 //                .name(it)
@@ -142,9 +138,6 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
     }
 
     private fun queryAthena(query:String, database: String, catalog: String, logger: LambdaLogger): String {
-        val athenaClient: AthenaClient = AthenaClient.builder()
-            .region(Region.EU_WEST_2)
-            .build()
 //              val database = "DIGITAL_PRISON_REPORTING"
 //              val catalog = "nomis"
 //              val query = "SELECT agy_loc_id FROM OMS_OWNER.LIVING_UNITS limit 10;"
