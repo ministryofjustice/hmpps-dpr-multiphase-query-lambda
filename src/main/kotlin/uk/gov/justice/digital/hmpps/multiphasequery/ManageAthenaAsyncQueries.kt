@@ -10,6 +10,8 @@ import software.amazon.awssdk.services.athena.model.QueryExecutionContext
 import software.amazon.awssdk.services.athena.model.StartQueryExecutionRequest
 import software.amazon.awssdk.services.redshiftdata.RedshiftDataClient
 import software.amazon.awssdk.services.redshiftdata.model.*
+import java.sql.Timestamp
+import java.time.Instant
 import java.util.Base64
 
 
@@ -28,13 +30,14 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
             logger.log("Received event $payload", LogLevel.INFO)
             val queryExecutionId = (payload["detail"] as Map<String,Any>)?.get("queryExecutionId") as String
             val currentState = (payload["detail"] as Map<String,Any>)?.get("currentState") as String?
+            val sequenceNumber = (payload["detail"] as Map<String,Any>)?.get("sequenceNumber") as Int
             logger.log("Current state: $currentState", LogLevel.INFO)
             logger.log("Current executionId: $queryExecutionId", LogLevel.INFO)
             if (queryExecutionId == null || currentState == null) {
                 logger.log("No execution ID or current state found in the Event.", LogLevel.ERROR)
                 throw RuntimeException("No execution ID or current state found in the Event.")
             }
-            val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState' WHERE current_execution_id = '$queryExecutionId'"
+            val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', sequence_number = '$sequenceNumber', last_update = ${Timestamp.from(Instant.now())} WHERE current_execution_id = '$queryExecutionId'"
             if (currentState == "SUCCEEDED") {
                 queryRedshift(updateStateQuery, logger)
                 val nextQueryToRun = """
@@ -65,7 +68,7 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
                         val catalog = getData("catalog", 0, getStatementResultResponse)
                         logger.log("The catalog from the admin table is: $catalog", LogLevel.INFO)
                         val athenaExecutionId = queryAthena(query, database, catalog, logger)
-                        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_execution_id = '$athenaExecutionId' WHERE root_execution_id = '$rootExecutionId' AND index = $index"
+                        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_execution_id = '$athenaExecutionId', sequence_number = '$sequenceNumber', last_update = ${Timestamp.from(Instant.now())} WHERE root_execution_id = '$rootExecutionId' AND index = $index"
                         queryRedshift(updateStateQuery, logger)
                         return athenaExecutionId
                     }
@@ -74,7 +77,7 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
             } else if (currentState == "FAILED") {
                 val error = ((payload["detail"] as Map<String,Any>)["athenaError"] as Map<String,Any>)["errorMessage"] as String
                 logger.log("Query with execution ID: $queryExecutionId failed. Error: $error",LogLevel.ERROR)
-                val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', error = '${Base64.getEncoder().encodeToString(error.toByteArray())}'  WHERE current_execution_id = '$queryExecutionId'"
+                val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', error = '${Base64.getEncoder().encodeToString(error.toByteArray())}', sequence_number = '$sequenceNumber', last_update = ${Timestamp.from(Instant.now())}  WHERE current_execution_id = '$queryExecutionId'"
                 queryRedshift(updateStateQuery, logger)
             } else {
                 queryRedshift(updateStateQuery, logger)
