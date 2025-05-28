@@ -30,7 +30,7 @@ class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String>
             logger.log("Received event $payload", LogLevel.INFO)
             val queryExecutionId = (payload["detail"] as Map<String,Any>)?.get("queryExecutionId") as String
             val currentState = (payload["detail"] as Map<String,Any>)?.get("currentState") as String?
-            val sequenceNumber = (payload["detail"] as Map<String,Any>)?.get("sequenceNumber") as Int
+            val sequenceNumber = ((payload["detail"] as Map<String,Any>)?.get("sequenceNumber") as String).toInt()
             logger.log("Current state: $currentState", LogLevel.INFO)
             logger.log("Current executionId: $queryExecutionId", LogLevel.INFO)
             if (queryExecutionId == null || currentState == null) {
