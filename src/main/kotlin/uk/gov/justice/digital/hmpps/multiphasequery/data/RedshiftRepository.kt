@@ -43,11 +43,11 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient) {
         queryExecutionId: String,
         logger: LambdaLogger,
         error: String? = null
-    ) {
+    ): ResultRowNum {
         val maybeError = error?.let{"error = '${Base64.getEncoder().encodeToString(error.toByteArray())}',"} ?: ""
         //Update the current state only if the sequence number of the Athena State Change event is greater than the existing sequence number stored in Redshift. i.e. only if this is a next event in the sequence.
         val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', $maybeError sequence_number = $sequenceNumber, last_update = '${Instant.now()}' WHERE current_execution_id = '$queryExecutionId' AND sequence_number < $sequenceNumber"
-        executeQueryAndWaitForCompletion(updateStateQuery, logger)
+        return executeQueryAndWaitForCompletion(updateStateQuery, logger)
     }
 
     fun updateWithNewExecutionId(athenaExecutionId: String, rootExecutionId: String, index: Int, logger: LambdaLogger) {
@@ -56,10 +56,10 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient) {
     }
 
     private fun queryAndGetResult(query: String, logger: LambdaLogger): GetStatementResultResponse {
-        return getStatementResult(executeQueryAndWaitForCompletion(query, logger))
+        return getStatementResult(executeQueryAndWaitForCompletion(query, logger).executionId)
     }
 
-    private fun executeQueryAndWaitForCompletion(query:String, logger: LambdaLogger): String {
+    private fun executeQueryAndWaitForCompletion(query:String, logger: LambdaLogger): ResultRowNum {
         val statementRequest = ExecuteStatementRequest.builder()
             .clusterIdentifier(System.getenv("CLUSTER_ID"))
             .database(System.getenv("DB_NAME"))
@@ -93,7 +93,7 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient) {
         }
         while (describeStatementResponse.status() != StatusString.FINISHED)
         logger.log("Finished executing statement with id: $executionId, status: ${describeStatementResponse.statusAsString()}, result rows: ${describeStatementResponse.resultRows()}", LogLevel.DEBUG)
-        return executionId
+        return ResultRowNum(executionId, describeStatementResponse.resultRows())
     }
 
     private fun getStatementResult(executionId: String): GetStatementResultResponse {
@@ -114,4 +114,6 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient) {
         getStatementResultResponse.columnMetadata().forEachIndexed{ i, colMetaData -> columnNameToResultIndex[colMetaData.name()] = i}
         return getStatementResultResponse.records()[rowNumber][columnNameToResultIndex[columnName]!!].longValue().toInt()
     }
+
+    data class ResultRowNum(val executionId: String, val resultingRows: Long)
 }
