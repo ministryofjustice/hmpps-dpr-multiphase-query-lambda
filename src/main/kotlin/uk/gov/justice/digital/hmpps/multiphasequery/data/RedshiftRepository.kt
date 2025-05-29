@@ -72,8 +72,8 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient) {
 //                .value(it[])
 //                .build()
 //        }
-        val executionId = redshiftClient.executeStatement(statementRequest).id()
         logger.log("Executing admin table query: $query", LogLevel.DEBUG)
+        val executionId = redshiftClient.executeStatement(statementRequest).id()
         logger.log("Executed admin table statement and got ID: $executionId", LogLevel.DEBUG)
         val describeStatementRequest = DescribeStatementRequest.builder()
             .id(executionId)

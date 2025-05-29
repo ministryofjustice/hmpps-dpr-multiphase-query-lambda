@@ -24,7 +24,6 @@ class MultiphaseQueryService(
                 logger.log("All queries succeeded. No further queries to run.")
             }
             "FAILED" -> {
-//                    val error = ((payload["detail"] as Map<String,Any>)["athenaError"] as Map<String,Any>)["errorMessage"] as String
                 logger.log("Query with execution ID: $queryExecutionId failed. Error: $error", LogLevel.ERROR)
                 retry (logger) { redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger, error) }
                 return null
@@ -37,15 +36,14 @@ class MultiphaseQueryService(
         return null
     }
 
-    private fun retry(logger: LambdaLogger, times: Int = 3, delayInMillis: Long = 500L, updateFun: () -> ResultRowNum) {
+    private fun retry(logger: LambdaLogger, times: Int = 2, delayInMillis: Long = 500L, updateFun: () -> ResultRowNum) {
         var attempt = 0
-        while (attempt < times ) {
-            val result = updateFun()
-             if(result.resultingRows == 0L) {
-                 logger.log("No rows found to update for execution ID: ${result.executionId}. Retrying ${attempt + 1}", LogLevel.DEBUG)
-                 attempt++
-                 Thread.sleep(delayInMillis)
-             }
+        var resultingRows = updateFun()
+        while (resultingRows.resultingRows == 0L && attempt < times ) {
+            logger.log("No rows found to update for execution ID: ${resultingRows.executionId}. Retrying ${attempt + 1}", LogLevel.DEBUG)
+            attempt++
+            Thread.sleep(delayInMillis)
+            resultingRows = updateFun()
         }
     }
 }
