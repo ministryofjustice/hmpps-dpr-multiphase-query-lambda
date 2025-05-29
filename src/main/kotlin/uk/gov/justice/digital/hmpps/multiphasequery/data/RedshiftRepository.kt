@@ -45,12 +45,12 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient) {
         error: String? = null
     ) {
         val maybeError = error?.let{"error = '${Base64.getEncoder().encodeToString(error.toByteArray())}',"} ?: ""
-        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', $maybeError sequence_number = '$sequenceNumber', last_update = '${Instant.now()}' WHERE current_execution_id = '$queryExecutionId'"
+        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', $maybeError sequence_number = $sequenceNumber, last_update = '${Instant.now()}' WHERE current_execution_id = '$queryExecutionId' AND sequence_number < $sequenceNumber"
         executeQueryAndWaitForCompletion(updateStateQuery, logger)
     }
 
     fun updateWithNewExecutionId(athenaExecutionId: String, sequenceNumber: Int, rootExecutionId: String, index: Int, logger: LambdaLogger) {
-        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_execution_id = '$athenaExecutionId', sequence_number = '$sequenceNumber', last_update = '${Instant.now()}' WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
+        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_execution_id = '$athenaExecutionId', sequence_number = $sequenceNumber, last_update = '${Instant.now()}' WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
         executeQueryAndWaitForCompletion(updateStateQuery, logger)
     }
 
