@@ -1,182 +1,54 @@
 package uk.gov.justice.digital.hmpps.multiphasequery
 
 import com.amazonaws.services.lambda.runtime.Context
-import com.amazonaws.services.lambda.runtime.LambdaLogger
 import com.amazonaws.services.lambda.runtime.RequestHandler
 import com.amazonaws.services.lambda.runtime.logging.LogLevel
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.athena.AthenaClient
-import software.amazon.awssdk.services.athena.model.QueryExecutionContext
-import software.amazon.awssdk.services.athena.model.StartQueryExecutionRequest
 import software.amazon.awssdk.services.redshiftdata.RedshiftDataClient
-import software.amazon.awssdk.services.redshiftdata.model.*
-import java.sql.Timestamp
-import java.time.Instant
-import java.util.Base64
+import uk.gov.justice.digital.hmpps.multiphasequery.data.AthenaRepository
+import uk.gov.justice.digital.hmpps.multiphasequery.data.RedshiftRepository
 
 
-class ManageAthenaAsyncQueries : RequestHandler<MutableMap<String, Any>, String> {
-    private val redshiftClient: RedshiftDataClient = RedshiftDataClient.builder()
-        .region(Region.EU_WEST_2)
-        .build()
-    private val athenaClient: AthenaClient = AthenaClient.builder()
-        .region(Region.EU_WEST_2)
-        .build()
+class ManageAthenaAsyncQueries(
+    private val multiphaseQueryService: MultiphaseQueryService = MultiphaseQueryService(
+        AthenaRepository(
+            AthenaClient.builder()
+                .region(Region.EU_WEST_2)
+                .build()),
+        RedshiftRepository(
+            RedshiftDataClient.builder()
+                .region(Region.EU_WEST_2)
+                .build()),
+    )
+) : RequestHandler<MutableMap<String, Any>, String> {
 
     override fun handleRequest(payload: MutableMap<String, Any>, context: Context?): String {
         if (context != null) {
             val logger = context.logger
             logger.log("Athena Query Management Lambda Invoked.", LogLevel.INFO)
             logger.log("Received event $payload", LogLevel.INFO)
-            val queryExecutionId = (payload["detail"] as Map<String,Any>)?.get("queryExecutionId") as String
-            val currentState = (payload["detail"] as Map<String,Any>)?.get("currentState") as String?
-            val sequenceNumber = ((payload["detail"] as Map<String,Any>)?.get("sequenceNumber") as String).toInt()
-            logger.log("Current state: $currentState", LogLevel.INFO)
-            logger.log("Current executionId: $queryExecutionId", LogLevel.INFO)
+            val queryExecutionId = extract(payload, "queryExecutionId")
+            val currentState = extract(payload, "currentState")
+            val sequenceNumber = extract(payload, "sequenceNumber").toInt()
+            val error = extractError(payload)
+            logger.log("Current state: $currentState", LogLevel.DEBUG)
+            logger.log("Current executionId: $queryExecutionId", LogLevel.DEBUG)
             if (queryExecutionId == null || currentState == null) {
                 logger.log("No execution ID or current state found in the Event.", LogLevel.ERROR)
                 throw RuntimeException("No execution ID or current state found in the Event.")
             }
-            val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', sequence_number = '$sequenceNumber', last_update = '${Instant.now()}' WHERE current_execution_id = '$queryExecutionId'"
-            if (currentState == "SUCCEEDED") {
-                queryRedshift(updateStateQuery, logger)
-                val nextQueryToRun = """
-                 SELECT t2.query, t2.database, t2.catalog, t2.datasource, t2.root_execution_id, t2.index FROM
-                  (SELECT root_execution_id, query, index FROM datamart.admin.execution_manager WHERE current_execution_id = '$queryExecutionId') AS t1
-                  JOIN
-                  (SELECT root_execution_id, index, query, database, catalog, datasource  FROM datamart.admin.execution_manager) AS t2
-                 ON t1.root_execution_id = t2.root_execution_id AND t2.index = (t1.index + 1)
-                  """
-                logger.log("Running admin query to find next query to run", LogLevel.INFO)
-                val getStatementResultResponse = queryRedshiftAndGetResult(nextQueryToRun, logger)
-                if (getStatementResultResponse.totalNumRows() == 1L) {
-                    val rootExecutionId = getData("root_execution_id", 0, getStatementResultResponse)
-                    val index = getIntData("index", 0, getStatementResultResponse)
-                    val query = String(Base64.getDecoder().decode(getData("query", 0, getStatementResultResponse).removeSurrounding("\"").toByteArray()))
-                    logger.log("Retrieved ${getStatementResultResponse.records()} results from admin table.", LogLevel.INFO)
-                    val datasource = getData("datasource", 0, getStatementResultResponse)
-                    if (datasource == "redshift") {
-                        val redshiftStmExecutionId = queryRedshift(query, logger)
-                        logger.log("Redshift statement execution ID: $redshiftStmExecutionId", LogLevel.INFO)
-                        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = 'SUCCEEDED', current_execution_id = '$redshiftStmExecutionId' WHERE root_execution_id = '$rootExecutionId' AND index = $index"
-                        logger.log("Update state Redshift query: $updateStateQuery", LogLevel.INFO)
-                        queryRedshift(updateStateQuery, logger)
-                        return redshiftStmExecutionId
-                    } else {
-                        val database = getData("database", 0, getStatementResultResponse)
-                        logger.log("The database from the admin table is: $database", LogLevel.INFO)
-                        val catalog = getData("catalog", 0, getStatementResultResponse)
-                        logger.log("The catalog from the admin table is: $catalog", LogLevel.INFO)
-                        val athenaExecutionId = queryAthena(query, database, catalog, logger)
-                        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_execution_id = '$athenaExecutionId', sequence_number = '$sequenceNumber', last_update = '${Instant.now()}' WHERE root_execution_id = '$rootExecutionId' AND index = $index"
-                        queryRedshift(updateStateQuery, logger)
-                        return athenaExecutionId
-                    }
-                }
-                logger.log("All queries succeeded. No further queries to run.")
-            } else if (currentState == "FAILED") {
-                val error = ((payload["detail"] as Map<String,Any>)["athenaError"] as Map<String,Any>)["errorMessage"] as String
-                logger.log("Query with execution ID: $queryExecutionId failed. Error: $error",LogLevel.ERROR)
-                val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', error = '${Base64.getEncoder().encodeToString(error.toByteArray())}', sequence_number = '$sequenceNumber', last_update = '${Instant.now()}'  WHERE current_execution_id = '$queryExecutionId'"
-                queryRedshift(updateStateQuery, logger)
-            } else {
-                queryRedshift(updateStateQuery, logger)
-            }
+            multiphaseQueryService.updateStateAndMaybeExecuteNext(currentState, queryExecutionId, sequenceNumber, logger, error)?.let { return it }
         }
         return "Context was null."
     }
 
-    private fun queryRedshift(query:String, logger: LambdaLogger): String {
-        val statementRequest = ExecuteStatementRequest.builder()
-            .clusterIdentifier(System.getenv("CLUSTER_ID"))
-            .database(System.getenv("DB_NAME"))
-            .secretArn(System.getenv("CREDENTIAL_SECRET_ARN"))
-            .sql(query)
-            .build()
-//        parameters?.let {
-//            val idParam = SqlParameter.builder()
-//                .name(it)
-//                .value(it[])
-//                .build()
-//        }
-        val executionId = redshiftClient.executeStatement(statementRequest).id()
-        logger.log("Executing admin table query: $query", LogLevel.DEBUG)
-        logger.log("Executed admin table statement and got ID: $executionId", LogLevel.DEBUG)
-        val describeStatementRequest = DescribeStatementRequest.builder()
-            .id(executionId)
-            .build()
-        var describeStatementResponse: DescribeStatementResponse
-        do {
-            Thread.sleep(500)
-            describeStatementResponse = redshiftClient.describeStatement(describeStatementRequest)
-            if (describeStatementResponse.status() == StatusString.FAILED) {
-                logger.log("Statement with execution ID: $executionId failed with the following error: ${describeStatementResponse.error()}",
-                    LogLevel.ERROR)
-                throw RuntimeException("Statement with execution ID: $executionId failed.")
-            } else if (describeStatementResponse.status() == StatusString.ABORTED) {
-                logger.log("Statement with execution ID: $executionId was aborted", LogLevel.ERROR)
-                throw RuntimeException("Statement with execution ID: $executionId was aborted.")
-            }
-        }
-        while (describeStatementResponse.status() != StatusString.FINISHED)
-        logger.log("Finished executing statement with id: $executionId, status: ${describeStatementResponse.statusAsString()}, result rows: ${describeStatementResponse.resultRows()}", LogLevel.DEBUG)
-        return executionId
+    private fun extract(payload: MutableMap<String, Any>, key: String): String {
+        return (payload["detail"] as Map<String,Any>)?.get(key) as String
     }
 
-    private fun getRedshiftStatementResult(executionId: String): GetStatementResultResponse {
-        val getStatementResultRequest = GetStatementResultRequest.builder()
-            .id(executionId)
-            .build()
-        return redshiftClient.getStatementResult(getStatementResultRequest)
-    }
-
-    private fun queryRedshiftAndGetResult(query: String, logger: LambdaLogger): GetStatementResultResponse {
-        return getRedshiftStatementResult(queryRedshift(query, logger))
-    }
-
-    private fun getData(columnName: String, rowNumber: Int, getStatementResultResponse: GetStatementResultResponse): String {
-        val columnNameToResultIndex = mutableMapOf<String, Int>()
-        getStatementResultResponse.columnMetadata().forEachIndexed{ i, colMetaData -> columnNameToResultIndex[colMetaData.name()] = i}
-        return getStatementResultResponse.records()[rowNumber][columnNameToResultIndex[columnName]!!].stringValue()
-    }
-
-    private fun getIntData(columnName: String, rowNumber: Int, getStatementResultResponse: GetStatementResultResponse): Int {
-        val columnNameToResultIndex = mutableMapOf<String, Int>()
-        getStatementResultResponse.columnMetadata().forEachIndexed{ i, colMetaData -> columnNameToResultIndex[colMetaData.name()] = i}
-        return getStatementResultResponse.records()[rowNumber][columnNameToResultIndex[columnName]!!].longValue().toInt()
-    }
-
-    private fun queryAthena(query:String, database: String, catalog: String, logger: LambdaLogger): String {
-//              val database = "DIGITAL_PRISON_REPORTING"
-//              val catalog = "nomis"
-//              val query = "SELECT agy_loc_id FROM OMS_OWNER.LIVING_UNITS limit 10;"
-
-        val queryExecutionContext = QueryExecutionContext.builder()
-            .database(database)
-            .catalog(catalog)
-            .build()
-        /*
-        """
-                CREATE TABLE AwsDataCatalog.reports.testingeventbridge
-                WITH (
-                  format = 'PARQUET'
-                )
-                AS (
-                SELECT * FROM TABLE(system.query(query =>
-
-                )))
-      """.trimIndent()
-      */
-        val startQueryExecutionRequest = StartQueryExecutionRequest.builder()
-            .queryString(query)
-            .queryExecutionContext(queryExecutionContext)
-            .workGroup("dpr-generic-athena-workgroup")
-            .build()
-        logger.log("Full Athena async query: $query", LogLevel.INFO)
-        val queryExecutionId = athenaClient
-            .startQueryExecution(startQueryExecutionRequest).queryExecutionId()
-        logger.log("Athena Query execution ID: $queryExecutionId", LogLevel.INFO)
-        return queryExecutionId
+    private fun extractError(payload: MutableMap<String, Any>): String? {
+        return ((payload["detail"] as Map<String,Any>)["athenaError"] as Map<String,Any>?)?.get("errorMessage") as String?
     }
 
 }
