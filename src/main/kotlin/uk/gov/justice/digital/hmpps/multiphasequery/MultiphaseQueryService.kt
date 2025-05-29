@@ -2,9 +2,6 @@ package uk.gov.justice.digital.hmpps.multiphasequery
 
 import com.amazonaws.services.lambda.runtime.LambdaLogger
 import com.amazonaws.services.lambda.runtime.logging.LogLevel
-import software.amazon.awssdk.regions.Region
-import software.amazon.awssdk.services.athena.AthenaClient
-import software.amazon.awssdk.services.redshiftdata.RedshiftDataClient
 import uk.gov.justice.digital.hmpps.multiphasequery.data.AthenaRepository
 import uk.gov.justice.digital.hmpps.multiphasequery.data.RedshiftRepository
 
@@ -20,7 +17,7 @@ class MultiphaseQueryService(
                 val nextQueryToRun = redshiftRepository.findNextQueryToExecute(queryExecutionId, logger)
                 nextQueryToRun?.let {
                     val athenaExecutionId = athenaRepository.executeQuery(it.nextQueryToRun, it.database, it.catalog, logger)
-                    redshiftRepository.updateWithNewExecutionId(athenaExecutionId, sequenceNumber, it.rootExecutionId, it.index, logger)
+                    redshiftRepository.updateWithNewExecutionId(athenaExecutionId, it.rootExecutionId, it.index, logger)
                     return athenaExecutionId
                 }
                 logger.log("All queries succeeded. No further queries to run.")
