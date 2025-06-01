@@ -11,16 +11,19 @@ import uk.gov.justice.digital.hmpps.multiphasequery.data.RedshiftRepository
 
 
 class ManageAthenaAsyncQueries(
+    env: Env = Env(),
     private val multiphaseQueryService: MultiphaseQueryService = MultiphaseQueryService(
         AthenaRepository(
             AthenaClient.builder()
                 .region(Region.EU_WEST_2)
-                .build()),
+                .build()
+        ),
         RedshiftRepository(
             RedshiftDataClient.builder()
                 .region(Region.EU_WEST_2)
-                .build()),
-    )
+                .build(), env),
+        env
+    ),
 ) : RequestHandler<MutableMap<String, Any>, String> {
 
     override fun handleRequest(payload: MutableMap<String, Any>, context: Context?): String {
@@ -38,7 +41,8 @@ class ManageAthenaAsyncQueries(
                 logger.log("No execution ID or current state found in the Event.", LogLevel.ERROR)
                 throw RuntimeException("No execution ID or current state found in the Event.")
             }
-            multiphaseQueryService.updateStateAndMaybeExecuteNext(currentState, queryExecutionId, sequenceNumber, logger, error)?.let { return it }
+            val rowsUpdated = multiphaseQueryService.updateStateAndMaybeExecuteNext(currentState, queryExecutionId, sequenceNumber, logger, error)
+            return "Completed execution and updated $rowsUpdated rows."
         }
         return "Context was null."
     }

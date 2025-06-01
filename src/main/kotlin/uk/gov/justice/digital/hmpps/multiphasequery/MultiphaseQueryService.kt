@@ -6,37 +6,45 @@ import uk.gov.justice.digital.hmpps.multiphasequery.data.AthenaRepository
 import uk.gov.justice.digital.hmpps.multiphasequery.data.RedshiftRepository
 import uk.gov.justice.digital.hmpps.multiphasequery.data.RedshiftRepository.ResultRowNum
 
+const val SUCCEEDED = "SUCCEEDED"
+const val FAILED = "FAILED"
+const val RETRY_TIMES = "RETRY_TIMES"
+const val RETRY_DELAY = "RETRY_DELAY"
+
 class MultiphaseQueryService(
     private val athenaRepository: AthenaRepository,
-    private val redshiftRepository: RedshiftRepository
+    private val redshiftRepository: RedshiftRepository,
+    private val env: Env,
 ) {
 
-    fun updateStateAndMaybeExecuteNext(currentState: String, queryExecutionId: String, sequenceNumber: Int, logger: LambdaLogger, error: String? = null): String? {
+    fun updateStateAndMaybeExecuteNext(currentState: String, queryExecutionId: String, sequenceNumber: Int, logger: LambdaLogger, error: String? = null): Long {
         when (currentState) {
-            "SUCCEEDED" -> {
-                retry (logger) {  redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger) }
+            SUCCEEDED -> {
+                var resultingRows = retry (logger) {
+                    redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger)
+                }
                 val nextQueryToRun = redshiftRepository.findNextQueryToExecute(queryExecutionId, logger)
                 nextQueryToRun?.let {
                     val athenaExecutionId = athenaRepository.executeQuery(it.nextQueryToRun, it.database, it.catalog, logger)
-                    redshiftRepository.updateWithNewExecutionId(athenaExecutionId, it.rootExecutionId, it.index, logger)
-                    return athenaExecutionId
-                }
-                logger.log("All queries succeeded. No further queries to run.")
+                    resultingRows += redshiftRepository.updateWithNewExecutionId(athenaExecutionId, it.rootExecutionId, it.index, logger)
+                } ?: logger.log("All queries succeeded. No further queries to run.")
+                return resultingRows
             }
-            "FAILED" -> {
+            FAILED -> {
                 logger.log("Query with execution ID: $queryExecutionId failed. Error: $error", LogLevel.ERROR)
-                retry (logger) { redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger, error) }
-                return null
+                return retry (logger) { redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger, error) }
             }
             else -> {
-                retry (logger) { redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger) }
-                return null
+                return retry (logger) { redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger) }
             }
         }
-        return null
     }
 
-    private fun retry(logger: LambdaLogger, times: Int = 2, delayInMillis: Long = 500L, updateFun: () -> ResultRowNum) {
+    private fun retry(
+        logger: LambdaLogger,
+        times: Int = env.get(RETRY_TIMES)?.toInt() ?: 2,
+        delayInMillis: Long = env.get(RETRY_DELAY)?.toLong()?: 500L,
+        updateFun: () -> ResultRowNum): Long {
         var attempt = 0
         var resultingRows = updateFun()
         while (resultingRows.resultingRows == 0L && attempt < times ) {
@@ -45,5 +53,6 @@ class MultiphaseQueryService(
             Thread.sleep(delayInMillis)
             resultingRows = updateFun()
         }
+        return resultingRows.resultingRows
     }
 }

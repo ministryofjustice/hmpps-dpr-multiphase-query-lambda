@@ -4,10 +4,17 @@ import com.amazonaws.services.lambda.runtime.LambdaLogger
 import com.amazonaws.services.lambda.runtime.logging.LogLevel
 import software.amazon.awssdk.services.redshiftdata.RedshiftDataClient
 import software.amazon.awssdk.services.redshiftdata.model.*
+import uk.gov.justice.digital.hmpps.multiphasequery.Env
 import java.time.Instant
 import java.util.Base64
 
-class RedshiftRepository(private val redshiftClient: RedshiftDataClient) {
+const val REDSHIFT_STATUS_POLLING_WAIT_MS = "REDSHIFT_STATUS_POLLING_WAIT_MS"
+
+const val REDSHIFT_CLUSTER_ID = "CLUSTER_ID"
+const val REDSHIFT_DB_NAME = "DB_NAME"
+const val REDSHIFT_CREDENTIAL_SECRET_ARN = "CREDENTIAL_SECRET_ARN"
+
+class RedshiftRepository(private val redshiftClient: RedshiftDataClient, private val env: Env) {
 
     fun findNextQueryToExecute(queryExecutionId: String, logger: LambdaLogger): NextQuery? {
         val queryToFindNextQueryToRun = """
@@ -18,7 +25,7 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient) {
                  ON t1.root_execution_id = t2.root_execution_id AND t2.index = (t1.index + 1)
                   """
         logger.log("Running admin query to find next query to run", LogLevel.DEBUG)
-        val getStatementResultResponse = queryAndGetResult(queryToFindNextQueryToRun, logger)
+        val getStatementResultResponse = executeQueryAndGetResult(queryToFindNextQueryToRun, logger)
         logger.log("Retrieved ${getStatementResultResponse.totalNumRows()} results from admin table.", LogLevel.DEBUG)
         return if (getStatementResultResponse.totalNumRows() == 1L) {
             logger.log("There is a next query to run.", LogLevel.DEBUG)
@@ -50,20 +57,20 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient) {
         return executeQueryAndWaitForCompletion(updateStateQuery, logger)
     }
 
-    fun updateWithNewExecutionId(athenaExecutionId: String, rootExecutionId: String, index: Int, logger: LambdaLogger) {
+    fun updateWithNewExecutionId(athenaExecutionId: String, rootExecutionId: String, index: Int, logger: LambdaLogger): Long {
         val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_execution_id = '$athenaExecutionId', last_update = '${Instant.now()}' WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
-        executeQueryAndWaitForCompletion(updateStateQuery, logger)
+        return executeQueryAndWaitForCompletion(updateStateQuery, logger).resultingRows
     }
 
-    private fun queryAndGetResult(query: String, logger: LambdaLogger): GetStatementResultResponse {
+    private fun executeQueryAndGetResult(query: String, logger: LambdaLogger): GetStatementResultResponse {
         return getStatementResult(executeQueryAndWaitForCompletion(query, logger).executionId)
     }
 
     private fun executeQueryAndWaitForCompletion(query:String, logger: LambdaLogger): ResultRowNum {
         val statementRequest = ExecuteStatementRequest.builder()
-            .clusterIdentifier(System.getenv("CLUSTER_ID"))
-            .database(System.getenv("DB_NAME"))
-            .secretArn(System.getenv("CREDENTIAL_SECRET_ARN"))
+            .clusterIdentifier(env.get(REDSHIFT_CLUSTER_ID))
+            .database(env.get(REDSHIFT_DB_NAME))
+            .secretArn(env.get(REDSHIFT_CREDENTIAL_SECRET_ARN))
             .sql(query)
             .build()
 //        parameters?.let {
@@ -80,7 +87,7 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient) {
             .build()
         var describeStatementResponse: DescribeStatementResponse
         do {
-            Thread.sleep(500)
+            Thread.sleep(env.get(REDSHIFT_STATUS_POLLING_WAIT_MS)?.toLong() ?: 500)
             describeStatementResponse = redshiftClient.describeStatement(describeStatementRequest)
             if (describeStatementResponse.status() == StatusString.FAILED) {
                 logger.log("Statement with execution ID: $executionId failed with the following error: ${describeStatementResponse.error()}",
