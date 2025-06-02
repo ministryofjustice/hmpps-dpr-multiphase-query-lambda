@@ -24,7 +24,7 @@ workflows:
           notify_jira: true
           notify_slack: true
           channel: dpr_cicd_alerts
-          command: clean jar shadowJar # Skip tests when building jar, they've already run
+          command: clean jar shadowJar --refresh-dependencies # Skip tests when building jar, they've already run
           filters:
             branches:
               only: /.*/
