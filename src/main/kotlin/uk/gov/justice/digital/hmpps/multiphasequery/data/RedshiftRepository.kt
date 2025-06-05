@@ -53,12 +53,12 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient, private
     ): ResultRowNum {
         val maybeError = error?.let{"error = '${Base64.getEncoder().encodeToString(error.toByteArray())}',"} ?: ""
         //Update the current state only if the sequence number of the Athena State Change event is greater than the existing sequence number stored in Redshift. i.e. only if this is a next event in the sequence.
-        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', $maybeError sequence_number = $sequenceNumber, last_update = '${Instant.now()}' WHERE current_execution_id = '$queryExecutionId' AND sequence_number < $sequenceNumber"
+        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', $maybeError sequence_number = $sequenceNumber, last_update = SYSDATE WHERE current_execution_id = '$queryExecutionId' AND sequence_number < $sequenceNumber"
         return executeQueryAndWaitForCompletion(updateStateQuery, logger)
     }
 
     fun updateWithNewExecutionId(athenaExecutionId: String, rootExecutionId: String, index: Int, logger: LambdaLogger): Long {
-        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_execution_id = '$athenaExecutionId', last_update = '${Instant.now()}' WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
+        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_execution_id = '$athenaExecutionId', last_update = SYSDATE WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
         return executeQueryAndWaitForCompletion(updateStateQuery, logger).resultingRows
     }
 

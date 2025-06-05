@@ -89,51 +89,43 @@ class RedshiftRepositoryTest {
     @ParameterizedTest
     @ValueSource(strings = [SUCCEEDED, FAILED])
     fun `updateStateOfExistingExecution updates the state and returns the execution ID of the update and the rows updated`(state: String) {
-        val instant = Instant.parse("2025-05-28T06:00:00Z")
-        Mockito.mockStatic(Instant::class.java).use { staticTimestampMockUtil ->
-            staticTimestampMockUtil.`when`<Instant> { Instant.now() }.thenReturn(instant)
-            val updateExecutionId = UUID.randomUUID().toString()
-            val sequenceNumber = 3
-            val maybeError: String? = (if (state == FAILED) "Something went wrong." else null)
-            val executeStatementRequest = setUpExecuteStatementRequest(updateStateOfExistingExecutionSql(state, sequenceNumber, maybeError?.let { "U29tZXRoaW5nIHdlbnQgd3Jvbmcu" }))
-            val describeStatementRequest = setUpDescribeStatementRequest(updateExecutionId)
+        val updateExecutionId = UUID.randomUUID().toString()
+        val sequenceNumber = 3
+        val maybeError: String? = (if (state == FAILED) "Something went wrong." else null)
+        val executeStatementRequest = setUpExecuteStatementRequest(updateStateOfExistingExecutionSql(state, sequenceNumber, maybeError?.let { "U29tZXRoaW5nIHdlbnQgd3Jvbmcu" }))
+        val describeStatementRequest = setUpDescribeStatementRequest(updateExecutionId)
 
-            whenever(redshiftDataClient.executeStatement(ArgumentMatchers.any(ExecuteStatementRequest::class.java),),).thenReturn(executeStatementResponse)
-            whenever(executeStatementResponse.id()).thenReturn(updateExecutionId)
-            whenever(redshiftDataClient.describeStatement(ArgumentMatchers.any(DescribeStatementRequest::class.java))).thenReturn(describeStatementResponse)
-            whenever(describeStatementResponse.status()).thenReturn(StatusString.FINISHED)
-            whenever(describeStatementResponse.resultRows()).thenReturn(1L)
+        whenever(redshiftDataClient.executeStatement(ArgumentMatchers.any(ExecuteStatementRequest::class.java),),).thenReturn(executeStatementResponse)
+        whenever(executeStatementResponse.id()).thenReturn(updateExecutionId)
+        whenever(redshiftDataClient.describeStatement(ArgumentMatchers.any(DescribeStatementRequest::class.java))).thenReturn(describeStatementResponse)
+        whenever(describeStatementResponse.status()).thenReturn(StatusString.FINISHED)
+        whenever(describeStatementResponse.resultRows()).thenReturn(1L)
 
-            val actual = redshiftRepository.updateStateOfExistingExecution(state, sequenceNumber, queryExecutionId, logger, maybeError)
+        val actual = redshiftRepository.updateStateOfExistingExecution(state, sequenceNumber, queryExecutionId, logger, maybeError)
 
-            verify(redshiftDataClient, times(1)).executeStatement(executeStatementRequest)
-            verify(redshiftDataClient, times(1)).describeStatement(describeStatementRequest)
-            assertEquals(ResultRowNum(updateExecutionId,1), actual)
-        }
+        verify(redshiftDataClient, times(1)).executeStatement(executeStatementRequest)
+        verify(redshiftDataClient, times(1)).describeStatement(describeStatementRequest)
+        assertEquals(ResultRowNum(updateExecutionId,1), actual)
     }
 
     @Test
     fun `updateWithNewExecutionId updates the matching rootExecution row with the new executionId for that index`() {
-        val instant = Instant.parse("2025-05-28T06:00:00Z")
-        Mockito.mockStatic(Instant::class.java).use { staticTimestampMockUtil ->
-            staticTimestampMockUtil.`when`<Instant> { Instant.now() }.thenReturn(instant)
-            val updateExecutionId = UUID.randomUUID().toString()
-            val executeStatementRequest = setUpExecuteStatementRequest(updateWithNewExecutionIdSql())
-            val describeStatementRequest = setUpDescribeStatementRequest(updateExecutionId)
-            val updatedRows = 1L
+        val updateExecutionId = UUID.randomUUID().toString()
+        val executeStatementRequest = setUpExecuteStatementRequest(updateWithNewExecutionIdSql())
+        val describeStatementRequest = setUpDescribeStatementRequest(updateExecutionId)
+        val updatedRows = 1L
 
-            whenever(redshiftDataClient.executeStatement(ArgumentMatchers.any(ExecuteStatementRequest::class.java),),).thenReturn(executeStatementResponse)
-            whenever(executeStatementResponse.id()).thenReturn(updateExecutionId)
-            whenever(redshiftDataClient.describeStatement(ArgumentMatchers.any(DescribeStatementRequest::class.java))).thenReturn(describeStatementResponse)
-            whenever(describeStatementResponse.status()).thenReturn(StatusString.FINISHED)
-            whenever(describeStatementResponse.resultRows()).thenReturn(updatedRows)
+        whenever(redshiftDataClient.executeStatement(ArgumentMatchers.any(ExecuteStatementRequest::class.java),),).thenReturn(executeStatementResponse)
+        whenever(executeStatementResponse.id()).thenReturn(updateExecutionId)
+        whenever(redshiftDataClient.describeStatement(ArgumentMatchers.any(DescribeStatementRequest::class.java))).thenReturn(describeStatementResponse)
+        whenever(describeStatementResponse.status()).thenReturn(StatusString.FINISHED)
+        whenever(describeStatementResponse.resultRows()).thenReturn(updatedRows)
 
-            val actual = redshiftRepository.updateWithNewExecutionId(queryExecutionId, rootExecutionId, index.toInt(), logger)
+        val actual = redshiftRepository.updateWithNewExecutionId(queryExecutionId, rootExecutionId, index.toInt(), logger)
 
-            verify(redshiftDataClient, times(1)).executeStatement(executeStatementRequest)
-            verify(redshiftDataClient, times(1)).describeStatement(describeStatementRequest)
-            assertEquals(updatedRows, actual)
-        }
+        verify(redshiftDataClient, times(1)).executeStatement(executeStatementRequest)
+        verify(redshiftDataClient, times(1)).describeStatement(describeStatementRequest)
+        assertEquals(updatedRows, actual)
     }
 
     private fun buildSingleRowResult() =
@@ -174,11 +166,11 @@ class RedshiftRepositoryTest {
     }
 
     private fun updateStateOfExistingExecutionSql(state: String, sequenceNumber: Int, maybeError: String?): String {
-        return "UPDATE datamart.admin.execution_manager SET current_state = '$state', ${maybeError?.let { "error = '$it'," } ?: ""} sequence_number = $sequenceNumber, last_update = '${Instant.now()}' WHERE current_execution_id = '$queryExecutionId' AND sequence_number < $sequenceNumber"
+        return "UPDATE datamart.admin.execution_manager SET current_state = '$state', ${maybeError?.let { "error = '$it'," } ?: ""} sequence_number = $sequenceNumber, last_update = SYSDATE WHERE current_execution_id = '$queryExecutionId' AND sequence_number < $sequenceNumber"
     }
 
     private fun updateWithNewExecutionIdSql(): String {
-        return "UPDATE datamart.admin.execution_manager SET current_execution_id = '$queryExecutionId', last_update = '${Instant.now()}' WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
+        return "UPDATE datamart.admin.execution_manager SET current_execution_id = '$queryExecutionId', last_update = SYSDATE WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
     }
 
     private fun buildHeaderRow(): List<ColumnMetadata>  {
