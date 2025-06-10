@@ -157,24 +157,24 @@ class RedshiftRepositoryTest {
 
     private fun findNextQuerySelectSql(): String {
         return """
-                 SELECT t2.query, t2.database, t2.catalog, t2.datasource, t2.root_execution_id, t2.index FROM
-                  (SELECT root_execution_id, query, index FROM datamart.admin.execution_manager WHERE current_execution_id = '$queryExecutionId') AS t1
+                 SELECT t2.query, t2.database, t2.catalog, t2.datasource_name, t2.root_execution_id, t2.index FROM
+                  (SELECT root_execution_id, query, index FROM datamart.admin.multiphase_query_state WHERE current_execution_id = '$queryExecutionId') AS t1
                   JOIN
-                  (SELECT root_execution_id, index, query, database, catalog, datasource  FROM datamart.admin.execution_manager) AS t2
+                  (SELECT root_execution_id, index, query, database, catalog, datasource_name  FROM datamart.admin.multiphase_query_state) AS t2
                  ON t1.root_execution_id = t2.root_execution_id AND t2.index = (t1.index + 1)
                   """
     }
 
     private fun updateStateOfExistingExecutionSql(state: String, sequenceNumber: Int, maybeError: String?): String {
-        return "UPDATE datamart.admin.execution_manager SET current_state = '$state', ${maybeError?.let { "error = '$it'," } ?: ""} sequence_number = $sequenceNumber, last_update = SYSDATE WHERE current_execution_id = '$queryExecutionId' AND sequence_number < $sequenceNumber"
+        return "UPDATE datamart.admin.multiphase_query_state SET current_state = '$state', ${maybeError?.let { "error = '$it'," } ?: ""} sequence_number = $sequenceNumber, last_update = SYSDATE WHERE current_execution_id = '$queryExecutionId' AND sequence_number < $sequenceNumber"
     }
 
     private fun updateWithNewExecutionIdSql(): String {
-        return "UPDATE datamart.admin.execution_manager SET current_execution_id = '$queryExecutionId', last_update = SYSDATE WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
+        return "UPDATE datamart.admin.multiphase_query_state SET current_execution_id = '$queryExecutionId', last_update = SYSDATE WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
     }
 
     private fun buildHeaderRow(): List<ColumnMetadata>  {
-        return listOf("database", "catalog", "datasource", "root_execution_id", "query", "index").map { ColumnMetadata.builder().name(it).build() }
+        return listOf("database", "catalog", "datasource_name", "root_execution_id", "query", "index").map { ColumnMetadata.builder().name(it).build() }
     }
 
     private fun buildRow(columns: List<String>): List<Field> {
