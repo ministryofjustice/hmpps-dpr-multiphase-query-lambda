@@ -18,10 +18,10 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient, private
 
     fun findNextQueryToExecute(queryExecutionId: String, logger: LambdaLogger): NextQuery? {
         val queryToFindNextQueryToRun = """
-                 SELECT t2.query, t2.database, t2.catalog, t2.datasource, t2.root_execution_id, t2.index FROM
-                  (SELECT root_execution_id, query, index FROM datamart.admin.execution_manager WHERE current_execution_id = '$queryExecutionId') AS t1
+                 SELECT t2.query, t2.database, t2.catalog, t2.datasource_name, t2.root_execution_id, t2.index FROM
+                  (SELECT root_execution_id, query, index FROM datamart.admin.multiphase_query_state WHERE current_execution_id = '$queryExecutionId') AS t1
                   JOIN
-                  (SELECT root_execution_id, index, query, database, catalog, datasource  FROM datamart.admin.execution_manager) AS t2
+                  (SELECT root_execution_id, index, query, database, catalog, datasource_name  FROM datamart.admin.multiphase_query_state) AS t2
                  ON t1.root_execution_id = t2.root_execution_id AND t2.index = (t1.index + 1)
                   """
         logger.log("Running admin query to find next query to run", LogLevel.DEBUG)
@@ -32,7 +32,7 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient, private
             val nextQuery = NextQuery(
                 catalog = getData("catalog", 0, getStatementResultResponse),
                 database = getData("database", 0, getStatementResultResponse),
-                datasource = getData("datasource", 0, getStatementResultResponse),
+                datasourceName = getData("datasource_name", 0, getStatementResultResponse),
                 index = getIntData("index", 0, getStatementResultResponse),
                 rootExecutionId = getData("root_execution_id", 0, getStatementResultResponse),
                 nextQueryToRun = String(Base64.getDecoder().decode(getData("query", 0, getStatementResultResponse).removeSurrounding("\"").toByteArray()))
@@ -53,12 +53,12 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient, private
     ): ResultRowNum {
         val maybeError = error?.let{"error = '${Base64.getEncoder().encodeToString(error.toByteArray())}',"} ?: ""
         //Update the current state only if the sequence number of the Athena State Change event is greater than the existing sequence number stored in Redshift. i.e. only if this is a next event in the sequence.
-        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_state = '$currentState', $maybeError sequence_number = $sequenceNumber, last_update = SYSDATE WHERE current_execution_id = '$queryExecutionId' AND sequence_number < $sequenceNumber"
+        val updateStateQuery = "UPDATE datamart.admin.multiphase_query_state SET current_state = '$currentState', $maybeError sequence_number = $sequenceNumber, last_update = SYSDATE WHERE current_execution_id = '$queryExecutionId' AND sequence_number < $sequenceNumber"
         return executeQueryAndWaitForCompletion(updateStateQuery, logger)
     }
 
     fun updateWithNewExecutionId(athenaExecutionId: String, rootExecutionId: String, index: Int, logger: LambdaLogger): Long {
-        val updateStateQuery = "UPDATE datamart.admin.execution_manager SET current_execution_id = '$athenaExecutionId', last_update = SYSDATE WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
+        val updateStateQuery = "UPDATE datamart.admin.multiphase_query_state SET current_execution_id = '$athenaExecutionId', last_update = SYSDATE WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
         return executeQueryAndWaitForCompletion(updateStateQuery, logger).resultingRows
     }
 

@@ -46,11 +46,11 @@ class MultiphaseQueryServiceTest {
         val resultRowNum = RedshiftRepository.ResultRowNum("someId", 1)
         val catalog = "catalog"
         val database = "db"
-        val datasource = "datasource"
+        val datasourceName = "datasourceName"
         val rootExecutionId = "rootId"
         val nextQueryToRun = "SELECT * FROM a"
         val nexQueryIndex = 1
-        val nextQuery = NextQuery(catalog, database, datasource, nexQueryIndex, rootExecutionId, nextQueryToRun)
+        val nextQuery = NextQuery(catalog, database, datasourceName, nexQueryIndex, rootExecutionId, nextQueryToRun)
         val executionIdOfNextQuery = UUID.randomUUID().toString()
 
         whenever(redshiftRepository.updateStateOfExistingExecution(any(), any(), any(), any(), anyOrNull())).thenReturn(resultRowNum)
