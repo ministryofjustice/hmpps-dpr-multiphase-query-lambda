@@ -1,6 +1,7 @@
 package uk.gov.justice.digital.hmpps.multiphasequery
 
 import com.amazonaws.services.lambda.runtime.LambdaLogger
+import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
@@ -11,6 +12,7 @@ import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import software.amazon.awssdk.services.athena.model.InternalServerException
 import uk.gov.justice.digital.hmpps.multiphasequery.data.AthenaRepository
 import uk.gov.justice.digital.hmpps.multiphasequery.data.NextQuery
 import uk.gov.justice.digital.hmpps.multiphasequery.data.RedshiftRepository
@@ -123,5 +125,30 @@ class MultiphaseQueryServiceTest {
 
         verify(redshiftRepository, times(2)).updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger, maybeError)
         assertEquals(1, actual)
+    }
+
+    @Test
+    fun `updateStateOfExistingExecution should be called when there is an exception`() {
+        val currentState = SUCCEEDED
+        val queryExecutionId = UUID.randomUUID().toString()
+        val sequenceNumber = 1
+        val resultRowNum = RedshiftRepository.ResultRowNum("someId", 1)
+        val catalog = "catalog"
+        val database = "db"
+        val datasourceName = "datasourceName"
+        val rootExecutionId = "rootId"
+        val nextQueryToRun = "SELECT * FROM a"
+        val nexQueryIndex = 1
+        val nextQuery = NextQuery(catalog, database, datasourceName, nexQueryIndex, rootExecutionId, nextQueryToRun)
+
+        whenever(redshiftRepository.findNextQueryToExecute(any(), any())).thenReturn(nextQuery)
+        whenever(redshiftRepository.updateStateOfExistingExecution(any(), any(), any(), any(), anyOrNull())).thenReturn(resultRowNum)
+        whenever(athenaRepository.executeQuery(any(), any(), any(), any())).thenThrow(InternalServerException.builder().message("Some network error").build())
+
+        Assertions.assertThrows(InternalServerException::class.java) {
+            multiphaseQueryService.updateStateAndMaybeExecuteNext(currentState, queryExecutionId, sequenceNumber, logger)
+        }
+        verify(redshiftRepository, times(1)).updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger)
+        verify(redshiftRepository, times(1)).updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger)
     }
 }
