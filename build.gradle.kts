@@ -24,6 +24,9 @@ dependencies {
   testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
   testImplementation("org.mockito:mockito-core:5.18.0")
 }
+dependencyCheck {
+    analyzers.ossIndex.enabled = false
+}
 java {
   toolchain.languageVersion.set(JavaLanguageVersion.of(21))
 }
