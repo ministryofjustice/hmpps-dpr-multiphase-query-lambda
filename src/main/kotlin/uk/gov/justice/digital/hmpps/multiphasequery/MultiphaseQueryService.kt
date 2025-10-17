@@ -42,7 +42,7 @@ class MultiphaseQueryService(
         } catch (e: Exception) {
             logger.log("Error executing multiphase query. Error: ${e.message}", LogLevel.ERROR)
             redshiftRepository.updateStateOfExistingExecution(
-                currentState, sequenceNumber, queryExecutionId, logger, error ?: "Unexpected error."
+                FAILED, sequenceNumber, queryExecutionId, logger, error ?: "Unexpected error."
             )
             logger.log("Stored error state in Redshift.", LogLevel.INFO)
             throw e
