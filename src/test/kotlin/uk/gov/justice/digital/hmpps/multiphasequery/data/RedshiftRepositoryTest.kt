@@ -17,6 +17,7 @@ import software.amazon.awssdk.services.redshiftdata.model.*
 import uk.gov.justice.digital.hmpps.multiphasequery.*
 import uk.gov.justice.digital.hmpps.multiphasequery.data.RedshiftRepository.*
 import java.time.Instant
+import java.util.Base64
 import java.util.UUID
 
 class RedshiftRepositoryTest {
@@ -128,6 +129,26 @@ class RedshiftRepositoryTest {
         assertEquals(updatedRows, actual)
     }
 
+    @Test
+    fun `updateNextQueryWithFailedToExecute updates the row with matching rootExecution and index with the error`() {
+        val updateExecutionId = UUID.randomUUID().toString()
+        val executeStatementRequest = setUpExecuteStatementRequest(updateNextQueryWithFailedToExecuteSql(2))
+        val describeStatementRequest = setUpDescribeStatementRequest(updateExecutionId)
+        val updatedRows = 1L
+
+        whenever(redshiftDataClient.executeStatement(ArgumentMatchers.any(ExecuteStatementRequest::class.java),),).thenReturn(executeStatementResponse)
+        whenever(executeStatementResponse.id()).thenReturn(updateExecutionId)
+        whenever(redshiftDataClient.describeStatement(ArgumentMatchers.any(DescribeStatementRequest::class.java))).thenReturn(describeStatementResponse)
+        whenever(describeStatementResponse.status()).thenReturn(StatusString.FINISHED)
+        whenever(describeStatementResponse.resultRows()).thenReturn(updatedRows)
+
+        val actual = redshiftRepository.updateNextQueryWithFailedToExecute(rootExecutionId, 2, "Failed to execute query at index 2: SELECT * FROM a Error: Some network error", logger)
+
+        verify(redshiftDataClient, times(1)).executeStatement(executeStatementRequest)
+        verify(redshiftDataClient, times(1)).describeStatement(describeStatementRequest)
+        assertEquals(updatedRows, actual)
+    }
+
     private fun buildSingleRowResult() =
         listOf(
             buildRow(listOf(database, catalog, datasourceName, rootExecutionId, "\"U0VMRUNUICogRlJPTSBh\"")).plus(
@@ -171,6 +192,10 @@ class RedshiftRepositoryTest {
 
     private fun updateWithNewExecutionIdSql(): String {
         return "UPDATE datamart.admin.multiphase_query_state SET current_execution_id = '$queryExecutionId', last_update = SYSDATE WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
+    }
+
+    private fun updateNextQueryWithFailedToExecuteSql(index: Long): String {
+        return "UPDATE datamart.admin.multiphase_query_state SET current_state = '$FAILED', error = 'RmFpbGVkIHRvIGV4ZWN1dGUgcXVlcnkgYXQgaW5kZXggMjogU0VMRUNUICogRlJPTSBhIEVycm9yOiBTb21lIG5ldHdvcmsgZXJyb3I=', last_update = SYSDATE WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
     }
 
     private fun buildHeaderRow(): List<ColumnMetadata>  {
