@@ -18,34 +18,35 @@ class MultiphaseQueryService(
 ) {
 
     fun updateStateAndMaybeExecuteNext(currentState: String, queryExecutionId: String, sequenceNumber: Int, logger: LambdaLogger, error: String? = null): Long {
-        try {
-            when (currentState) {
-                SUCCEEDED -> {
-                    var resultingRows = retry (logger) {
-                        redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger)
-                    }
-                    val nextQueryToRun = redshiftRepository.findNextQueryToExecute(queryExecutionId, logger)
-                    nextQueryToRun?.let {
-                        val athenaExecutionId = athenaRepository.executeQuery(it.nextQueryToRun, it.database, it.catalog, logger)
-                        resultingRows += redshiftRepository.updateWithNewExecutionId(athenaExecutionId, it.rootExecutionId, it.index, logger)
-                    } ?: logger.log("All queries succeeded. No further queries to run.")
-                    return resultingRows
+        when (currentState) {
+            SUCCEEDED -> {
+                var resultingRows = retry (logger) {
+                    redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger)
                 }
-                FAILED -> {
-                    logger.log("Query with execution ID: $queryExecutionId failed. Error: $error", LogLevel.ERROR)
-                    return retry (logger) { redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger, error) }
-                }
-                else -> {
-                    return retry (logger) { redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger) }
-                }
+                val nextQueryToRun = redshiftRepository.findNextQueryToExecute(queryExecutionId, logger)
+                nextQueryToRun?.let {
+                    val athenaExecutionId =
+                        try {
+                            athenaRepository.executeQuery(it.nextQueryToRun, it.database, it.catalog, logger)
+                        } catch (e: Exception) {
+                            logger.log("Error executing next multiphase query. Error: ${e.message}", LogLevel.ERROR)
+                            redshiftRepository.updateNextQueryWithFailedToExecute(
+                                it.rootExecutionId, it.index, "Failed to execute query at index ${it.index}: ${it.nextQueryToRun} Error: ${e.message}", logger,
+                            )
+                            logger.log("Stored error state in Redshift.", LogLevel.INFO)
+                            throw e
+                        }
+                    resultingRows += redshiftRepository.updateWithNewExecutionId(athenaExecutionId, it.rootExecutionId, it.index, logger)
+                } ?: logger.log("All queries succeeded. No further queries to run.")
+                return resultingRows
             }
-        } catch (e: Exception) {
-            logger.log("Error executing multiphase query. Error: ${e.message}", LogLevel.ERROR)
-            redshiftRepository.updateStateOfExistingExecution(
-                currentState, sequenceNumber, queryExecutionId, logger, error ?: "Unexpected error."
-            )
-            logger.log("Stored error state in Redshift.", LogLevel.INFO)
-            throw e
+            FAILED -> {
+                logger.log("Query with execution ID: $queryExecutionId failed. Error: $error", LogLevel.ERROR)
+                return retry (logger) { redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger, error) }
+            }
+            else -> {
+                return retry (logger) { redshiftRepository.updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger) }
+            }
         }
     }
 

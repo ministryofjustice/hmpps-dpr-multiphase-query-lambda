@@ -149,6 +149,7 @@ class MultiphaseQueryServiceTest {
             multiphaseQueryService.updateStateAndMaybeExecuteNext(currentState, queryExecutionId, sequenceNumber, logger)
         }
         verify(redshiftRepository, times(1)).updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger)
-        verify(redshiftRepository, times(1)).updateStateOfExistingExecution(currentState, sequenceNumber, queryExecutionId, logger)
+        verify(redshiftRepository, times(1)).updateNextQueryWithFailedToExecute(rootExecutionId, nexQueryIndex, "Failed to execute query at index 1: SELECT * FROM a Error: Some network error", logger)
+        verify(redshiftRepository, times(0)).updateWithNewExecutionId(any(), any(), any(), any())
     }
 }

@@ -5,7 +5,7 @@ import com.amazonaws.services.lambda.runtime.logging.LogLevel
 import software.amazon.awssdk.services.redshiftdata.RedshiftDataClient
 import software.amazon.awssdk.services.redshiftdata.model.*
 import uk.gov.justice.digital.hmpps.multiphasequery.Env
-import java.time.Instant
+import uk.gov.justice.digital.hmpps.multiphasequery.FAILED
 import java.util.Base64
 
 const val REDSHIFT_STATUS_POLLING_WAIT_MS = "REDSHIFT_STATUS_POLLING_WAIT_MS"
@@ -59,6 +59,11 @@ class RedshiftRepository(private val redshiftClient: RedshiftDataClient, private
 
     fun updateWithNewExecutionId(athenaExecutionId: String, rootExecutionId: String, index: Int, logger: LambdaLogger): Long {
         val updateStateQuery = "UPDATE datamart.admin.multiphase_query_state SET current_execution_id = '$athenaExecutionId', last_update = SYSDATE WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
+        return executeQueryAndWaitForCompletion(updateStateQuery, logger).resultingRows
+    }
+
+    fun updateNextQueryWithFailedToExecute(rootExecutionId: String, index: Int, error: String, logger: LambdaLogger): Long {
+        val updateStateQuery = "UPDATE datamart.admin.multiphase_query_state SET current_state = '$FAILED', error = '${Base64.getEncoder().encodeToString(error.toByteArray())}', last_update = SYSDATE WHERE root_execution_id = '${rootExecutionId}' AND index = $index"
         return executeQueryAndWaitForCompletion(updateStateQuery, logger).resultingRows
     }
 
